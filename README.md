@@ -1,0 +1,1 @@
+# Intelitrader-Desafio-Whatsapp-Data-Sync-
