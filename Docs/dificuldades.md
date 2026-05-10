@@ -6,3 +6,10 @@ O problema: Linguagem requisitada pelo desafio
 Solução: Abordagem de aprendizado pragmático
 
 ---
+
+## Dificuldade 02: Race Condition
+
+O Golang é muito rápido. Enquanto eu testava uma lógica para o uso de Observers, eu notei que os índices de pesquisa ao Banco de Dados estavam "retrógados", testei também a inserção de valores repetidos e em velocidades diferentes, e o comportamento foi o mesmo, o ID não acompanhava a mudança do banco de dados, mesmo que o Observer disparasse com a mudança pois o Agente é muito rápido (ele chegava no banco de dados antes da mudança ser salva). Então eu pesquisei uma forma de adicionar uma fila, até pensei em delay em primeiro momento, mas pensei que talvez não fosse a melhor solução (e foi). Apanhei por horas, mas com pesquisa consegui identificar até erros que causei no código por conta de fadiga.
+
+O problema: O agente chegava no banco de dados antes dos dados
+Solução: criar uma lógica de fila + delay
