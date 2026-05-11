@@ -22,7 +22,7 @@
 - [x] Usou IA para reescrever o `README.md`, e melhorar a descrição pré-escrita do projeto.
 - [x] Gerou arquivo LICENSE com as condições de uso do projeto (restrito apenas para o teste).
 
-> Commmit: 8d45888 feat(ambiente): Configura repositório, documentação e prepara Agente GO para execução no Android
+> Commit: 8d45888 feat(ambiente): Configura repositório, documentação e prepara Agente GO para execução no Android
 
 ---
 
@@ -32,8 +32,9 @@
 
 Após analisar, entendi que Polling realizaria uma consulta periódica no banco de dados, enquanto o Observer iria aguardar alguma mudança acontecer para disparar a função do agente. Para me decidir entre um e outro, levei em conta que o critério da aplicação é ser em tempo real, se reduzisse o tempo de polling isso poderia ser prejucidial tanto à bateria e performance quanto à experiencia. Já que existe um processo rodando ativamente chamado inotify no kernel Linux (base do Android) que pode ser apontado para o Write-Ahead Logging (WAL) do banco de dados do WhatsApp, programar um Observer seria como programar um gatilho que só dispara quando necessário, economizando recursos.
 
-Decisão: Usar Observer para "vigiar" banco de dados com o próprio "vigia do sistema" (inotify)
-Consequência: Arquitetura do projeto a partir desse ponto vira um Event-Driven.
+Decisão: Usar Observer para "vigiar" banco de dados com o próprio "vigia do sistema" (inotify), e um time.Tick para fazer polling no banco de dados quando no android, para resistir ao Write-back Cache.
+
+Consequência: Arquitetura do projeto a partir desse ponto vira um **Event-Driven**.
 
 Problema identificado: Alguns programas podem disparar mais de uma notificação para uma simples operação, o que pode gerar consultas desnecessárias ao banco de dados
 
@@ -131,6 +132,40 @@ $ go run .
   - [x] Resolveu uma Race Condition
   - [x] Testou manualmente conexão com banco de dados via ADB
   - [x] Resolveu Chatters (logs repetitivos) que aconteciam por serem executados no lugar errado dos loops
+
+> commit: c730008 test(agent): simula triggers de observers em estrutura semelhante ao WhatsApp
+
+---
+
+##### Mudando para Ambiente Android (identificando limitações)
+
+Os testes anteriores foram feitos na máquina local, simulando estrutura semelhante ao do WhatsApp, conhecida até então. Ao realizar os testes em ambiente Android (Linux), me deparei com as seguintes limitações:
+
+1. **Permissão de root** - O agente sofre de restrições em pastas do sistema, sendo visto como processo não prioritário.
+   - Para contornar isso, o agente deve ser executado em modo de superusuário `su`, ou pode ser configurado como daemon/serviço do sistema com `magisk`.
+
+2. **Hierarquia de permissões** - Para o banco de dados em um Android, dificilmente duas atividades podem acessar o banco de dados com permissão integral (edição), a menos que uma delas esteja apenas em readonly (apenas leitura).
+   - O agente se conecta no banco agora com flags de acesso `readOnly` para apenas leitura e `Syncronous` para respeitar a ordem de I/O do Banco de Dados, e aguardar o registro ser devidamente salvo.
+   - Detecção de alteração no WAL -> apenas observa o banco de dados -> Aguarda regisro ser salvo para disparar consulta SQL em seguida
+
+3. **Dooze Mode** - o sistema precisa reconhecer o processo como um serviço prioritário e evitar "matar" ele.
+   - Através do `oom_score_adj`, o próprio agente se configura como serviço de alta prioridade, então, quando o Android estiver economizando recursos (OMM Killer), o Agente não vai ser encerrado.
+
+4. **Arquitetura de Abstrações de baixo consumo** - O Kernel do Android é otimizado para economizar bateria, então alguns eventos não são processados em tempo, salvando registros novo em cache para economizar CPU e bateria.
+   - Para resolver isso, é adicionado um time.Tick que "cutuca" o banco de dados, e faz o Watcher disparar a requisição a procura de novos registros.
+
+5. **Identificando o agente como um Daemon** - O comportamento do agente é equivalente ao de _serviços de background_ (Daemons: processos que operam no _espaço do usuário_ de forma assíncrona, gerenciando recursos e respondendo a eventos do sistema). -> Criei um `deploy.bash` para ter uma _"execução de disparo único"_ que atualiza o daemon, envia para o Android e configura as permissões, e em seguida exectua via adb root.
+
+O código foi devidamente adaptado, agora o agente consegue se comportar exatamente como um serviço nativo do sistema, similar ao anteriormente testado no ambiente Windows. Durante os testes entre um dia e outro, percebi que o Go, ao fazer build do binário para Android, me forçava a linkar o NDK, mas em nenhum momento do meu código até então eu fiz uso, de fato, de nenhuma biblioteca do NDK. Embora eu tenha conseguido buildar com ele uma vez, o Agente funciona perfeitamente sem linkar com o NDK, o que culminou na quinta etapa (após pesquisar sobre, e revisar o código com uma IA externamente (não usei agentes/gemini/cloud code), a arquitetura do meu binário é o mesmo de um daemon, e o objetivo da revisão foi apenas saber se sem o NDK o código poderia quebrar em algum momento que eu não estivesse vendo).
+
+- [x] Criou PoC (Proof of Case) para implementação do Agente/Daemon de monitoramento
+  - [x] Identificou limitações do SO Android
+  - [x] Pesquisou e testou soluções durante desenvolvimento do PoC
+    - [x] Agente/Daemon não conseguia acompanhar as atualizações do Banco de Dados no Android
+      - [x] Resolveu usando flag de acesso `readOnly` e `Syncronous`
+    - [x] Pesquisou que outras limitações o Android impõe ao Agente (Definição de prioridade)
+      - [x] Adicionou time.Ticks (polling) como fallback dos observers (evita que observers "durmam")
+      - [x] Adicionou `oom.score.adj` para aumentar a prioridade do agente/daemon
 
 ---
 

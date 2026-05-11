@@ -26,9 +26,9 @@ O objetivo principal é construir um ecossistema que integre a extração de men
 
 ## 🛠️ Tecnologias e Arquitetura
 
-- **Agente Nativo:** Golang (cross-compilado nativamente via NDK para arquitetura do Android).
+- **Daemon/Agente Nativo:** Golang.
 - **Interface Externa:** C# (.NET).
-- **Mensageria e Cache:** Redis (rodando localmente via Docker).
+- **Mensageria e Cache:** Redis (rodando em máquina local via Docker).
 - **Ambiente de Teste:** Emulador Android Studio (Pixel 6 Pro) com acesso Root liberado.
 
 ### Arquitetura da Solução

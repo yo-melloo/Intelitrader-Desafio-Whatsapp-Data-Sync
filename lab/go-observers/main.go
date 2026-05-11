@@ -44,53 +44,53 @@ func main() {
 			watcher.Add(databaseWalPath)
 			log.Println("[WATCHER] Watcher adicionado ao arquivo: \"" + databaseWalPath + "\"")
 		}
-		defer database.Close()
-		
-		err = database.QueryRow("SELECT COALESCE(MAX(id), 0) FROM example").Scan(&lastProcessID)
-		if err != nil {
-			log.Fatal("Erro ao calibrar ID inicial:", err)
-		}
-		
-		go func() {
-			for {
-				select {
-				case event, ok := <-watcher.Events:
-					if !ok {
-						return
-					}
-					//log.Println("[WATCHER] Evento detectado")
-					
-					if event.Has(fsnotify.Write) {
-						if timer != nil {
-							timer.Stop() // para timers anteriores, se existirem, para evitar logs repetidos
-						}
+	defer database.Close()
 	
-						timer = time.AfterFunc(200*time.Millisecond, func() { // inicia um novo timer para gerar o log após um curto atraso
-						buscarUltimaMensagem(database) // o log que exibe o conteúdo do registro encontrado no banco de dados está nessa função
-						})
-					}
-					
-					if event.Has(fsnotify.Create) {
-						log.Println("[WATCHER] O arquivo foi criado.\n", event.Op)
-					}
-					
-					if event.Has(fsnotify.Remove) {
-						log.Println("[WATCHER] O arquivo foi removido.\n", event.Op)
-					}
-					
-				case err, ok := <-watcher.Errors:
-					if !ok {
-						return
-					}
-					fmt.Println("[WATCHER] Erro detectado:", err)
+	err = database.QueryRow("SELECT COALESCE(MAX(id), 0) FROM example").Scan(&lastProcessID)
+	if err != nil {
+		log.Fatal("Erro ao calibrar ID inicial:", err)
+	}
+	
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
 				}
+				//log.Println("[WATCHER] Evento detectado")
+				
+				if event.Has(fsnotify.Write) {
+					if timer != nil {
+						timer.Stop() // para timers anteriores, se existirem, para evitar logs repetidos
+					}
+
+					timer = time.AfterFunc(200*time.Millisecond, func() { // inicia um novo timer para gerar o log após um curto atraso
+					buscarUltimaMensagem(database) // o log que exibe o conteúdo do registro encontrado no banco de dados está nessa função
+					})
+				}
+				
+				if event.Has(fsnotify.Create) {
+					log.Println("[WATCHER] O arquivo foi criado.\n", event.Op)
+				}
+				
+				if event.Has(fsnotify.Remove) {
+					log.Println("[WATCHER] O arquivo foi removido.\n", event.Op)
+				}
+				
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				fmt.Println("[WATCHER] Erro detectado:", err)
 			}
-			}()
-			
-			
-			<-done
 		}
+		}()
 		
+		
+		<-done
+	}
+	
 		
 func buscarUltimaMensagem(db *sql.DB) { // Lógica de fila para buscar os próximos registros do banco de dados a partir do lastProcessID (global)
 	
