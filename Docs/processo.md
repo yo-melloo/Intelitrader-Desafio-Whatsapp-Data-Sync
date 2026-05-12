@@ -167,6 +167,33 @@ O código foi devidamente adaptado, agora o agente consegue se comportar exatame
       - [x] Adicionou time.Ticks (polling) como fallback dos observers (evita que observers "durmam")
       - [x] Adicionou `oom.score.adj` para aumentar a prioridade do agente/daemon
 
+> Commit 9297764 test(agent): adapta e testa agente em ambiente android para identificar limitações
+
+---
+
+### Etapa-003: Implementação do Redis e Modelagem de Dados
+
+#### Fase-1: Implementação do Redis
+
+Como nunca tive experiência com Redis, fiz uma pesquisa e olhei a documentação oficial: achei fácil, mas o problema do desafio pedia por algo que não estava explicito em nenhum tutorial ou parte da documentação - ao menos de início. Pensando em "encurtar o caminho" (no bom sentido), me aproveitei da maleabilidade da função Modo IA da pesquisa do Google para "produzir meu próprio tutorial", em uma sessão eu consegui aprender e consolidar teoria e prática de poncorrência e paralelismo, publisher e subscribers, e producers e consumers, além do CRUD básico de Redis. Não muito diferente do que já fiz com Go até agora.
+
+- [x] Instalou Redis
+- [x] Fez o primeiro CRUD com Redis
+- [x] Aprendeu usar string hashes (para o desafio)
+- [x] Fez a primeira estrutura de Pub/Sub
+- [x] Fez a primeira esturua Producer/Consumer
+
+#### Fase-2: Modelagem de Dados
+
+Quando interagi a primeira vez com a tabela `message` do banco de dados do WhatsApp, percebi que "nem todos os dados estão lá", quase deixei um detalhe despercebido passar: o WhatsApp usa mais de um banco de dados para guardar informações. Em resumo, até dá para monitorar as mensagens do WhatsApp pela tabela, mas algumas informações que podem ajudar na identificação estão em outros bancos. Parte desse processo fiz com mais interação com IA, onde, através de tentativa e erro, realizei algumas queries SQL no banco de dados do WhatsApp (vale ressaltar que tenho conhecimentos básicos em SQL, mas ainda peco em joins, quando vi que ia ser necessário trabalhar com eles, resolvi "apelar" pro meu mentor virtual, ou seja, mesmo sem saber trabalhar com joins, eu consegui prever que precisava deles, por isso que essa parte etapa foi inteiramente no terminal), e identifiquei que vou precisar trabalhar com o `msgstore.db` e com `wa.db`.
+
+Após encontrar a "query perfeita", fiz um trabalho investigativo para consolidação do conhecimento, o que resultou no quadro do projeto `WhatsAppSync Excalidraw.png`.
+
+- [x] Modelou os dados da base de dados do WhatsApp para a aplicação
+  - [x] Investigou "pontos cegos" na interpretação das queries
+  - [x] Aprendeu como funciona as JOINs
+- [ ] Conseguiu enviar os dados em tempo real para o Redis
+
 ---
 
 As etapas processo foram devidamente organizadas em um quadro Kanban usando Trello: https://trello.com/b/SuVJxaAJ/desafio-intelitrader
