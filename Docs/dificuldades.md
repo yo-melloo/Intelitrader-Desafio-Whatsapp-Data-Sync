@@ -37,3 +37,25 @@ Solução: polir pesquisa apenas para o necessário exigido para o desafio
 ## Dificuldade 05: SQL Joins
 
 Não tive contato muito prático com Joins na minha pouca experiência, isso culminou em eu ter que, mais uma vez, ter um brainstorming com IA e fazer uma "investigação" no banco de dados do WhatsApp, como relatado em `processo.md`. Contornei essa dificuldade com essa "mentoria", mas sei muito bem que qualquer pessoa que delega estudos para IA permite que se crie uma "dívida técnica/cognitiva", coisa que eu mitiguei com um "teste investigativo": É possível encontrar `teste-sql-joins.md` aqui na pasta de documentação, ele foi um "dever de casa" que pedi para IA fazer, que respondi com minhas próprias palavras, e deletei e refiz manualmente os comentários na query com minha versão do entendimento, então acredito que essa parte da dificuldade eu tratei devidamente como um "autodidata" deveria o fazer.
+
+---
+
+## Dificuldade 06: Runtime Go
+
+Durante o processo de implementação da query SQL no Agente, ao gerar o binário/daemon ficou provado que para a arquitetura Android x86_64, o Go exige o CGO_ENABLED=1 e o linker externo do NDK para lidar com o gerenciamento de memória (o Thread Local Storage (TLS) - especialmente as páginas de 16 KB do Android 17). Isso significa que, tive que rever o uso do NDK que, interpretei como desnecessário graças ao Go, para Necessário justamente por usar o Go. Veio a calhar pois um erro de interpretação da minha parte quase me faria forçar o agente ser independente dele.
+
+O problema: A arquitetura x86_64 no Android 17 exige o linker do NDK para compatibilidade com o alinhamento de memória TLS.
+
+A solução: Gerei um script para gerar o binário com CGO_ENABLED=1 e flags de linker específicas corrigiu o erro `android/amd64 requires external linking`
+
+## Dificuldade 07: Consumo da Query SQL
+
+Ainda durante o processo de implementação da query SQL no agente, ao rodar o daemon, a sincronia em tempo real parou. A começar que eu esqueci de tirar o limitador da query (LIMIT 20), e adaptar todo o resto. Enquanto discutia com a IA sobre o que estava acontecendo no código (eu já estava começando achar que quebrei o código todo), identificamos que se tratava de uma particularidade do Go: ele não processa o `ATTACH DATABASE` no começo da query, e não estava conseguindo injetar o lastProcessID nela.
+
+O problema: O Go estava sendo redundante em tentar abrir várias conexões dos bancos de dados cada vez que o Watcher via um evento (pois ele disparava a query toda vez e toda vez ele anexava uma nova conexão do banco de dados), e o agente não lia/escrevia as mensagens.
+
+A solução: Gerenciar a conexão no próprio agente, reconfigurar o daemon, e readptar a query para injeção da variável `lastIdProcess`
+
+> Thread Local Storage (TLS) é método de gerenciamento de memória que permite a cada thread em um processo multithread a ter sua própria cópia de dados.
+
+---

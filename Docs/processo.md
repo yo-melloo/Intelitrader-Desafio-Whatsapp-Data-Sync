@@ -26,7 +26,7 @@
 
 ---
 
-### Etapa-002: Implementar leitura recursiva do banco de dados
+### Etapa-002: Implementar leitura do banco de dados
 
 #### DECISÃO-TÉCNICA-001: Polling vs. Observer
 
@@ -183,16 +183,26 @@ Como nunca tive experiência com Redis, fiz uma pesquisa e olhei a documentaçã
 - [x] Fez a primeira estrutura de Pub/Sub
 - [x] Fez a primeira esturua Producer/Consumer
 
+> Commit: ddea034 test(redis): Executa primeiro CRUD com Redis, e estrutura pedida pelo desafio
+
 #### Fase-2: Modelagem de Dados
 
 Quando interagi a primeira vez com a tabela `message` do banco de dados do WhatsApp, percebi que "nem todos os dados estão lá", quase deixei um detalhe despercebido passar: o WhatsApp usa mais de um banco de dados para guardar informações. Em resumo, até dá para monitorar as mensagens do WhatsApp pela tabela, mas algumas informações que podem ajudar na identificação estão em outros bancos. Parte desse processo fiz com mais interação com IA, onde, através de tentativa e erro, realizei algumas queries SQL no banco de dados do WhatsApp (vale ressaltar que tenho conhecimentos básicos em SQL, mas ainda peco em joins, quando vi que ia ser necessário trabalhar com eles, resolvi "apelar" pro meu mentor virtual, ou seja, mesmo sem saber trabalhar com joins, eu consegui prever que precisava deles, por isso que essa parte etapa foi inteiramente no terminal), e identifiquei que vou precisar trabalhar com o `msgstore.db` e com `wa.db`.
 
 Após encontrar a "query perfeita", fiz um trabalho investigativo para consolidação do conhecimento, o que resultou no quadro do projeto `WhatsAppSync Excalidraw.png`.
 
+Ao tentar adaptar a query no Agente, me deparei com mais limitações, dessa vez com o Go: o Go é quem gerencia as conexões entre demais bancos de dados, o NDK era necessário, e a query pecisava de um pequena adaptação. Relatei todo o drama em `dificuldades.md`, mas em resumo, precisei de mais indução de IA para entender o que estava acontecendo.
+
 - [x] Modelou os dados da base de dados do WhatsApp para a aplicação
   - [x] Investigou "pontos cegos" na interpretação das queries
   - [x] Aprendeu como funciona as JOINs
-- [ ] Conseguiu enviar os dados em tempo real para o Redis
+- [x] Corrigiu agente
+  - [x] Corrigiu `pullMessages` para trabalhar com a query correta
+  - [x] Consolidou processo de build e deploy do agente em um script bash
+  - [x] Corrigiu a falta do NDK e referências para montar a build
+  - [x] Configurou o agente para gerar o deploy sem precisar carregar o arquivo .sql junto `go://embbeded`
+- [ ] Adaptou o agente para trabalhar com Redis
+  - [ ] Conseguiu enviar as mensagem em tempo real para o Redis
 
 ---
 
