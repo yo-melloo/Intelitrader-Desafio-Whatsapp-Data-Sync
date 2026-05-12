@@ -48,6 +48,8 @@ O problema: A arquitetura x86_64 no Android 17 exige o linker do NDK para compat
 
 A solução: Gerei um script para gerar o binário com CGO_ENABLED=1 e flags de linker específicas corrigiu o erro `android/amd64 requires external linking`
 
+---
+
 ## Dificuldade 07: Consumo da Query SQL
 
 Ainda durante o processo de implementação da query SQL no agente, ao rodar o daemon, a sincronia em tempo real parou. A começar que eu esqueci de tirar o limitador da query (LIMIT 20), e adaptar todo o resto. Enquanto discutia com a IA sobre o que estava acontecendo no código (eu já estava começando achar que quebrei o código todo), identificamos que se tratava de uma particularidade do Go: ele não processa o `ATTACH DATABASE` no começo da query, e não estava conseguindo injetar o lastProcessID nela.

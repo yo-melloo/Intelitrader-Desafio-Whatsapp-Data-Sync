@@ -201,8 +201,15 @@ Ao tentar adaptar a query no Agente, me deparei com mais limitações, dessa vez
   - [x] Consolidou processo de build e deploy do agente em um script bash
   - [x] Corrigiu a falta do NDK e referências para montar a build
   - [x] Configurou o agente para gerar o deploy sem precisar carregar o arquivo .sql junto `go://embbeded`
-- [ ] Adaptou o agente para trabalhar com Redis
-  - [ ] Conseguiu enviar as mensagem em tempo real para o Redis
+
+> Commit: 3ce8cb6 test(database): modela dados vindos do whatsapp e adpta agente
+
+Sem dificuldades, implementei o push de mensagens para o Redis, revisarei essa etapa antes de entregar o desafio. O diferencial foi que entendi melhor como funcniona as Structs, e as usei para criar o DTO o JSON e String Hash da mensagem pra ser enviada para o Redis (apenas a String Hash).
+
+- [x] Adaptou o agente para trabalhar com Redis
+  - [x] Aprendeu criar JSONs, DTOs e Structs no Go
+  - [x] Conseguiu enviar as mensagem em tempo real para o Redis
+  - [x] Pré-configurou o agente para produzir JSONs (talvez seja descartado, ou implementado)
 
 ---
 

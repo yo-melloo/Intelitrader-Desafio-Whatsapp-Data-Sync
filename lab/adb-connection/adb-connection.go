@@ -19,8 +19,10 @@ package main
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/redis/go-redis/v9"
 	_ "modernc.org/sqlite"
 )
 
@@ -55,19 +58,32 @@ type MessageRow struct {
 	Horario      sql.NullString
 }
 
+type MessageDTO struct {
+    ID           int    `json:"id"`
+    Contexto     string `json:"contexto"`
+    NomeConversa string `json:"nome_conversa"`
+    Remetente    string `json:"remetente"`
+    Conteudo     string `json:"conteudo"`
+    Horario      string `json:"horario"`
+}
+
 //go:embed query-copy.sql
 var sqlQueryMessages string
+
+var ctx = context.Background()
+
 
 func main() {
 
 	/* Processo: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 	* 0. Estabelece proteção contra OOM Killer
 	* 1. Estabelece e configura conexão com banco de dados
-	* 2. Insere Watcher para monitorar o diretório de dados do WhatsApp, com flags para trabalhar conforme Write-Back Cache 
-	* 3. Calibra o lastProcessID para o ID mais recente no banco de dados, garantindo que apenas novas mensagens sejam processadas
-	* 4. Goroutine que monitora o banco de dados do WhatsApp
-	* 5. Loga as mensagens novas que chegarem no WhatsApp após a inicialização do agente
-	*
+	* 2. Estabelece conexão com Redis
+	* 3. Insere Watcher para monitorar o diretório de dados do WhatsApp, com flags para trabalhar conforme Write-Back Cache 
+	* 4. Calibra o lastProcessID para o ID mais recente no banco de dados, garantindo que apenas novas mensagens sejam processadas
+	* 5. Goroutine que monitora o banco de dados do WhatsApp
+	* 6. Loga as mensagens novas que chegarem no WhatsApp após a inicialização do agente
+	* 7. Exporta mensagem para Redis
 	>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/ 
 
 	// 0. Proteção contra o OOM Killer
@@ -101,7 +117,21 @@ func main() {
 	log.Println("[SQLITE3 DRIVER] Conexão com os bancos de dados estabelecida com sucesso!")
 
 
-	// 2. Inserir Watcher no diretório:
+	// 2. Estabelece conexão com Redis
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "10.0.2.2:6379",
+		Password: "",
+		DB:       0,
+	})
+	
+	err = rdb.Ping(ctx).Err()
+	if err != nil {
+    	log.Fatalf("[Redis] Erro ao conectar: %v", err)
+	}
+	log.Println("[Redis] Conxão estabelecida com sucesso!")
+	defer rdb.Close()
+
+	// 3. Inserir Watcher no diretório:
 	watcher, err := fsnotify.NewWatcher()	// Instancia novo Watcher
 	if err != nil { log.Fatal(err) }
 	defer watcher.Close()
@@ -111,7 +141,7 @@ func main() {
 	log.Printf("[WATCHER] Watcher adicionado ao diretório: \"%s\"\n", dbDir)
 
 
-	// 3. Calibra o lastProcessID para o ID:
+	// 4. Calibra o lastProcessID para o ID:
 	var tempMsg sql.NullString	// Agente agora lida com Null Strings do SQL = Quando a query não funciona ou o resultado é nulo por algum padrão
 	err = database.QueryRow("SELECT _id, text_data FROM message ORDER BY _id DESC LIMIT 1").Scan(&lastProcessID, &tempMsg)
 	if err != nil { log.Fatal("[SQLITE3 DRIVER] Erro ao calibrar ID inicial: ", err) }
@@ -121,7 +151,7 @@ func main() {
 	fmt.Printf("[WATCHER] A útlima mensagem foi: %s\n", tempMsg.String)
 
 
-	// 4. Goroutine que monitora o banco de dados do WhatsApp:
+	// 5. Goroutine que monitora o banco de dados do WhatsApp:
 	go func() {
 		ticker := time.NewTicker(2 * time.Second) // Fallback para Polling para evitar que o Watcher "pisque"
 		defer ticker.Stop()
@@ -144,13 +174,13 @@ func main() {
 						// No Android, o SQLite WAL gera muitos eventos de atribuição de permissão (Chmod)
 						// O agente deve reagir a quase tudo que signifique apenas "mudança"
 						if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Chmod) != 0 {	// verifica qual dos eventos aconteceu
-							go pullMessage(database, sqlQueryMessages)
+							go pullMessage(database, rdb, sqlQueryMessages)
 						}
 					}
 				
 				case <-ticker.C:
 					// O Ticker acordar o Watcher se o cache do Android demorar a processar a próxima alteração (Heartbeat)
-					go pullMessage(database, sqlQueryMessages)
+					go pullMessage(database, rdb, sqlQueryMessages)
 				
 				case err, ok := <-watcher.Errors:
 					if !ok { return }
@@ -165,7 +195,7 @@ func main() {
 
 // Lê o banco de dados e retorna a útlima mensagem inserida
 // Retorna registro com pouca modelagem - TODO [x]: MODELAR DADOS PARA EXIBIÇÃO ÍNTEGRA DE MENSAGENS
-func pullMessage(database *sql.DB, querysqlQueryMessages string) {
+func pullMessage(database *sql.DB, rdb *redis.Client, querysqlQueryMessages string) {
 	
 	// Proteção contra Race Condition:
     mu.Lock() // bloqueia o acesso às variáveis das outras Goroutines
@@ -208,12 +238,60 @@ func pullMessage(database *sql.DB, querysqlQueryMessages string) {
             return "NULO"
         }
 
+		dto := MessageDTO{
+			ID:				m.ID,
+			Contexto:		format(m.Contexto),
+			NomeConversa:	format(m.NomeConversa),
+			Remetente:		format(m.Remetente),
+			Conteudo:		format(m.Conteudo),
+			Horario:		format(m.Horario),
+		}
+		stringID := fmt.Sprintf("msg:%d", m.ID)
+
+		// Se for necessário futuramente, o Agente já produz o JSON da mensagem:
+		jsonData, err := json.Marshal(dto)
+		if err != nil {
+			log.Printf("Erro ao gerar JSON: %v", err)
+		} else {
+			fmt.Println("[Marshall JSON] JSON Gerado:", string(jsonData))
+		}
+		
+		// 6. loga as mensagens que chegam após a inicialização do agente:
         log.Printf("[%s] %s: %s (via %s) em %s", 
-            format(m.Contexto), 
+		format(m.Contexto), 
             format(m.Remetente), 
             format(m.Conteudo), 
             format(m.NomeConversa), 
             format(m.Horario),
         )
+
+		// 7. Exporta mensagem para Redis:
+		redisHash := createStringHash(dto)
+		pushStringHash(ctx, rdb, stringID, redisHash)
+		log.Print("[Redis] Mensagem registrada com sucesso")
+		
+
     }
+}
+
+func pushStringHash(ctx context.Context, rdb *redis.Client, stringID string, redisHash map[string]interface{}){
+
+	// Salva e publica a mudança
+	rdb.HSet(ctx, stringID, redisHash)
+	rdb.Publish(ctx, "general:hash-updates", stringID)
+
+}
+
+func createStringHash(dto MessageDTO) map[string]interface{} {
+
+	// Usando String Hash aprendido anteriormente
+	redisHash := map[string]interface{}{
+		"Contexto":     dto.Contexto,
+		"NomeConversa": dto.NomeConversa,
+		"Remetente":    dto.Remetente,
+		"Conteudo":     dto.Conteudo,
+		"Horario":      dto.Horario,
+	}
+	return redisHash
+
 }

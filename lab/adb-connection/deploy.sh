@@ -1,7 +1,7 @@
 export CGO_ENABLED=1
 export GOOS=android
 export GOARCH=amd64
-export CC="C:/Users/olive/AppData/Local/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android35-clang"
+export CC="C:/Users/$(whoami)/AppData/Local/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android35-clang"
 
 echo "🔨 Compilando agente_sync para Android x86_64..."
 
