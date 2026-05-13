@@ -211,6 +211,121 @@ Sem dificuldades, implementei o push de mensagens para o Redis, revisarei essa e
   - [x] Conseguiu enviar as mensagem em tempo real para o Redis
   - [x] Pré-configurou o agente para produzir JSONs (talvez seja descartado, ou implementado)
 
+> Commit: 1407607 test(Redis): Adapta agente para salvar e publicar as mensagens no Redis
+
+---
+
+## Etapa-004: Aplicação Externa
+
+#### Decisão-Técnica-002: Usar IA como Agente de programação para criar base da aplicação:
+
+Nesta etapa, eu decidi que iria implementar uma **API REST** para consumir o Redis, e interagir com ele em tempo real. **Usei IA, e dessa vez como agente**, para auxiliar na criação da **base da API** (ele gerou com alguns erros, o que é perfeito para eu aprender corrigindo o código) em .NET Minimal API. Para contornar a dívida técnica/cognitiva, gerei com ele uma documentação de revisão da arquitetura (`TECH_GUIDE.md`), que serve como um guia técnico para entender as implicações e o funcionamento do ecossistema .NET e Next.js. Essa etapa só será entregue após a conclusão dos testes, que dependem do entendimento a estrutura gerada pelo agente, e por ajustes necessários para o objetivo final do desafio. Para o frontend, aproveitei que pedi ao agente para criar a base da API, o pedi para que desenvolvesse o front-end com a estrutura que eu já tinha desenvolvido com as Provas de Conceito em /lab, e eu o corrigi pois encontrei alguns erros - mais um processo de entendimento de Typescript/Next.js para o desafio, mas não foquei em me aprofundar em front-end.
+
+#### Decisão-Técnica-003: Conteinerizar serviços:
+
+Percebendo o aumento de tecnologias no projeto (C#, Go, Javascript/Typescript, Redis), resolvi conteinerizar os serviços para facilitar o desenvolvimento, e evitar possíveis conflitos entre dependências, versionamentos, e etc. Contei com IA para configurar Dockerfile do back-end, pois **nunca havia conteinerizado uma aplicação .NET** e corrigir os docker-composes.
+
+### Back-end: Teste
+
+Por ser familiarizado com Java e ter experiência mínima com C++, muito da sintaxe do C# é familiar para mim (Família C).
+
+Na máquina local:
+
+- [x] Instalou .Net
+  - [x] Entendeu como funciona o .Net
+    - [x] Fez o primeiro app em C# (console app)
+      - [x] Imprimiu a mensagem "Hello World" no terminal
+      - [x] Entendeu como funcionam propriedades e métodos
+      - [x] Entendeu como funcionam herança
+      - [x] Entendeu como funcionam polimorfismo
+      - [x] Entendeu como funcionam encapsulamento
+    - [x] Entendeu como funciona o .Net Minimal API
+  - [x] Implementou API em .NET Minimal API
+    - [x] Entendeu os passos da criação de uam API em Minimal API
+      - [x] Montou um buider simples
+      - [x] Configurou o CORS
+      - [x] Montou a aplicação
+      - [x] Criou endpoints GET
+      - [x] Criou endpoints POST para o Redis
+    - [x] Implementou Redis Pub/Sub
+      - [x] Entendeu como funciona o Redis Pub/Sub no Minimal API
+      - [x] Entendeu como funciona o processamento assíncrono das Tasks do Async/Await
+      - [x] API de testes é capaz de salvar mensagens no Redis (Push)
+      - [x] API de testes é capaz de carregar mensagens do Redis (Pull)
+      - [x] API de testes é capaz de receber mensagens do Redis (Sub)
+      - [x] API de testes é capaz de enviar mensagens para o Redis (Pub)
+    - [x] API de testes simula o endpoint /contacts do desafio
+      - [x] API de testes é capaz de criar um contato no Redis (POST)
+      - [x] API de testes é capaz de buscar um contato no Redis (GET)
+    - [x] Organizou a arquitetura da API para proximidade da base gerada com IA (arquitetura em Camadas/Modular)
+    - [x] Entendeu como funciona SSE (Server-Sent Events) para interagir com Redis em tempo real.
+    - [x] Aprendeu a usar DTOs em C#.
+    - [x] Revisou e ajustou código gerado pelo agente
+
+### Back-end: Implementação
+
+A base da API foi gerada com IA e revisada manualmente. Os principais ajustes necessários para o ambiente Docker com Next.js e Redis foram:
+
+- [x] Corrigiu conflito de versões no `Dockerfile`: build usava `sdk:10.0` mas runtime estava em `aspnet:8.0` — corrigido para `aspnet:10.0`
+- [x] Corrigiu incompatibilidade de nomenclatura: C# serializa em `camelCase` (`nomeConversa`), frontend esperava `snake_case` (`nome_conversa`) — corrigido nos tipos TypeScript e adicionado alias no DTO
+- [x] Adicionou campo `receivedAt` ao backend (o frontend esperava o campo, a IA não havia gerado)
+- [x] Adicionou **Heartbeat SSE (ping a cada 15s)**: sem ele, o Nginx encerrava a conexão por inatividade com erro `499` após 60 segundos
+- [x] Corrigiu bug de desinscrição coletiva no Redis: fechar uma aba cancelava o canal de **todos** os clientes — simplificado para `Timeout.Infinite` com `RequestAborted`
+- [x] Corrigiu dupla inscrição no canal Redis que duplicava as mensagens no feed
+- [x] Expôs porta `6379:6379` do Redis no `docker-compose.yml` para o Agente Android alcançar o host via `10.0.2.2`
+- [x] **Tradução Avançada LID -> JID no Android**: Redigiu a query SQL para consulta no banco de dados do WhatsApp com múltiplas camadas de `COALESCE` para cruzar dados entre `msgstore.db` e `wa.db`.
+
+### Modelagem de Dados e SQL Avançado
+
+A extração de dados foi readaptada para lidar com a complexidade do esquema interno do WhatsApp (LID - Linked Identity), que mascara números de telefone reais, depois que incluí um terceiro - não salvo - número nos testes:
+
+- [x] **Resolução de Identidade (LID to PN)**: Criou uma ponte de mapeamento via tabela `status_ranking` para traduzir IDs internos do WhatsApp (`@lid`) em números de telefone legíveis (`@s.whatsapp.net`).
+- [x] **Hierarquia de Nomes (6 Camadas)**: Estabeleceu uma cadeia de prioridade para exibir o nome mais legível possível:
+  1. Nome da Agenda (`display_name`)
+  2. Nome via Mapeamento LID
+  3. Nome Verificado (Business)
+  4. Nome de Perfil (`wa_name`)
+  5. Nome de Perfil via LID
+  6. Fallback ("Desconhecido")
+
+- [!] **Desafio Técnico: Bruteforce de Identidade**: Durante os testes com um terceiro número (não salvo), observou-se uma inconsistência na arquitetura do WhatsApp. Enquanto alguns contatos permitem o mapeamento LID -> PN (Phone Number), outros permanecem restritos apenas ao LID.
+- [!] **Conclusão de Segurança**: Identificou-se que o WhatsApp está transitando para uma arquitetura mais segura onde o número de telefone pode estar ausente das tabelas locais (`wa_contacts` / `status_ranking`) para contatos fora da agenda, impossibilitando a resolução do número real via SQL local em 100% dos casos.
+
+### Front-end: Refinamento e UX
+
+O painel visual foi refinado com agente para garantir uma experiência sem erros de execução:
+
+- [x] **Centralização Vertical do Dashboard**: Ajustou o grid principal (`lg:grid-cols-12`) com `items-center` para balancear visualmente a sidebar de estatísticas com o feed de mensagens.
+- [x] **Correção de Hydration Mismatch (Next.js)**: Solucionou erro crítico de hidratação onde `Math.random()` gerava valores divergentes entre servidor e cliente. Implementou o padrão `isMounted` para garantir renderização segura de métricas simuladas.
+- [x] **Micro-animações de Tráfego**: Adicionou feedback visual progressivo no "Monitor de Tráfego" para simular a atividade do Agente Android em tempo real.
+
+### Resumo dos Marcos
+
+s- **Infraestrutura**: A conteinerização via Docker unificou as tecnologias (.NET, Go, Next.js, Redis), eliminando conflitos de ambiente e garantindo portabilidade total do desafio.
+
+- **Backend Robustez**: A implementação da API em .NET com Redis Pub/Sub e SSE transformou o fluxo de dados em um stream de baixa latência, com mecanismos de resiliência como Heartbeats e gestão de conexões.
+- **Engenharia de Dados**: A superação do desafio de identidades (LID vs JID) via SQL avançado, permitindo a extração de nomes e números mesmo em uma arquitetura de banco de dados fragmentada.
+- **Interface de Usuário**: A criação de um Dashboard responsivo que não apenas exibe dados, mas simula a telemetria do agente, proporcionando uma visão operacional em tempo real.
+
+---
+
+### Etapa-005: Reflexão e Triangulação Técnica
+
+Esta etapa final consistiu em um processo de "espelhamento" com o agente de IA para nomear as práticas que apliquei instintivamente ao longo do desafio. Como um desenvolvedor que nunca cursou graduação, minha base é 100% fruto de autoconhecimento e uma jornada de 7 anos de pesquisas e estudos autodidatas (com alguns hiatos e meses recentes de imersão intensa).
+
+#### Identificação de Padrões (Prática vs. Teoria)
+
+Através da análise técnica do agente de IA sobre o código gerado, foi possível identificar que apliquei padrões de arquitetura de nível sênior por pura intuição técnica e necessidade lógica, mesmo sem conhecer seus nomes acadêmicos:
+
+- [x] **Spike & Stabilize (PoC-Driven)**: O uso sistemático da pasta `/lab` para validar hipóteses isoladas (Redis, Observers, Android Root) antes da integração no código de produção.
+- [x] **Strangler Fig Pattern**: A evolução do agente em paralelo à base original, substituindo e absorvendo funcionalidades de forma incremental e segura.
+- [x] **Debounce Pattern**: O uso de timers (`time.AfterFunc`) para mitigar o "chattering" (múltiplas notificações) do sistema de arquivos Android, evitando consultas redundantes.
+- [x] **Cursor-Based Pagination**: A lógica de busca via `lastProcessID` (cursor) em vez de offset, garantindo integridade cronológica e evitando duplicidade de mensagens.
+- [x] **Graceful Degradation**: O sistema híbrido de Watcher + Polling Ticker que garante o funcionamento do sync mesmo sob limitações severas de economia de energia do Android (Doze Mode).
+- [x] **DTO & Separation of Concerns**: A distinção clara entre structs de banco de dados (`MessageRow`) e objetos de transferência (`MessageDTO`) para isolar a camada de persistência da camada de transporte.
+
+**Sinceridade Técnica**: Durante a entrevista, utilizarei da minha sinceridade para explicar que esses nomes foram identificados nesta etapa de reflexão com a IA. Isso prova que a prática e a habilidade de pesquisa (7 anos de autodidatismo) me levaram a implementar soluções de engenharia robustas que a academia apenas formaliza.
+
 ---
 
 As etapas processo foram devidamente organizadas em um quadro Kanban usando Trello: https://trello.com/b/SuVJxaAJ/desafio-intelitrader

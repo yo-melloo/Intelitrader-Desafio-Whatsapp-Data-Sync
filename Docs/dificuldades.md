@@ -61,3 +61,34 @@ A solução: Gerenciar a conexão no próprio agente, reconfigurar o daemon, e r
 > Thread Local Storage (TLS) é método de gerenciamento de memória que permite a cada thread em um processo multithread a ter sua própria cópia de dados.
 
 ---
+
+## Dificuldade 08: Aplicação externa
+
+Como dev Java, eu não conhecia C# .NET, apesar de já ter tido uma rasa experiência a muitos anos, sem sucesso nas minhas tentativas. Ao ver os requisitos do projeto, já identifiquei como uma barreira a ser supéra: aprender não só uma linguagem de programação novas, como duas (Go e C#). Da mesma maneira que fiz com Go, farei com C#, ressaltando que parte do processo foi feita com auxílio de IA (como documentado em `processo.md`), voltado apenas para a resolução do projeto.
+
+PS.: Fazer uma API REST com C# não foi um processo tão difícil, claro, tem suas particularidades. Acredito que um desenvolvedor Java (como eu) ou PHP conseguiria implementar algo assim em até 1h (dependendo do conhecimento prévio e da familiaridade com o Framework), e no meu caso, pesquisa e ação foi o caminho.
+
+O problema: Barreira de novas linguagens de programação
+
+Solução: Auxílio de IA, Rubber Duckering e tutoriais curtos de C# .NET
+
+---
+
+## Dificuldade 09: Estágio 1 de 2 do fim da aplicação
+
+Desenvolvi os componentes necessários para o evento 1 da pipeline do desafio (Salvar e servir as mensagens do WhatsApp, no cliente - frontend - através do Redis), então simulei essa interação com serviços conteinerizados, as dificuldades que encontrei foram adaptabilidade das conexões entre os containers, e código gerado pelo agente no front-end.
+
+O problema: quebras de protocolo por parte do agente:
+
+- **Conflito de versões do runtime .NET**: O `Dockerfile` compilava o projeto com o SDK do .NET 10, mas o estágio de execução usava a imagem `aspnet:8.0`. O binário exigia o runtime 10 e o container só oferecia o 8, impedindo a inicialização.
+- **Redis inacessível para o Agente Android**: A porta `6379` do container Redis não estava mapeada para o host. O Agente (no emulador Android, que usa `10.0.2.2` para alcançar o host) não conseguia estabelecer conexão.
+- **Incompatibilidade de nomenclatura no JSON (CamelCase vs. snake_case)**: O backend C# serializava os campos em `camelCase` (ex: `nomeConversa`), mas a interface TypeScript do frontend definia os campos em `snake_case` (ex: `nome_conversa`). O Dashboard ficava vazio pois os campos nunca eram encontrados.
+- **Campo `receivedAt` ausente no backend**: O frontend esperava um campo `receivedAt` no JSON que o backend nunca enviava, gerando inconsistência de tipo no TypeScript.
+- **Timeout de 60 segundos na conexão SSE (erro 499)**: Sem mensagens novas, a conexão SSE ficava em silêncio e o Nginx/Windows a encerrava por inatividade, gerando o erro `Erro no EventSource: {}` no console do browser.
+- **Bug de desinscrição coletiva no Redis**: Ao fechar o browser, o código executava `redis.Unsubscribe("general:hash-updates")`, cancelando a inscrição de **todos** os clientes conectados no canal, e não apenas do que havia desconectado.
+- **Dupla inscrição no canal Redis**: Durante a depuração, uma chamada extra a `redis.Subscribe(handler)` foi acidentalmente introduzida, fazendo com que cada mensagem nova fosse processada e enviada duas vezes ao frontend.
+- **Inconsistência de Serialização JSON (PascalCase vs camelCase)**: As mensagens enviadas via SSE eram serializadas manualmente sem definir uma política de nomes, resultando em chaves em `PascalCase` (`Id`, `Conteudo`). Como o frontend esperava `camelCase`, as mensagens novas apareciam sem conteúdo e causavam erro de chaves duplicadas no React (todas eram tratadas como `id: undefined`).
+
+Solução: Depuração e testes com correções dos problemas identificados.
+
+---

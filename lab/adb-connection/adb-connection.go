@@ -4,6 +4,7 @@
 * a itenção é identificar e mitigar os desafios de acesso ao ambiente do Android e o acesso ao banco de dados do WhatsApp,
 * Condição de sucesso: o console exibir as mensagens que começarão a chegar no whatsapp após a inicialização, sem perdas.
 * Definição de Sucesso -> Conclui Etapa de Implementação de leitura do banco de dados -> Integrar em WhatsAppSync/main.go -> Iniciar integração com Redis (Proxima etapa) + modelagem de dados
+* Post-Commit: Esqueci de atualizar esse cabeçalho, agora o agente já compreende etapa de implementação de leitura do banco e escrita do Redis ao mesmo tempo
  */
 
 package main

@@ -1,0 +1,69 @@
+# - O arquivo docker-compose.yml é usado para definir e executar aplicações Docker multi-container
+# - Ele permite configurar os serviços da aplicação, suas redes e volumes em um único arquivo YAML
+
+services:
+  backend:
+    # Constrói a imagem a partir do Dockerfile no diretório ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Mapeia a porta 5000 do container para a porta 5000 do host
+    ports:
+      - "5000:5000"
+    environment:
+      - Redis__ConnectionString=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - dashboard-network
+
+  frontend:
+    # Constrói a imagem a partir do Dockerfile no diretório ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Expõe a porta 3000 do container (acessível via porta 80 do nginx)
+    # Note: não estamos mapeando para a porta 3000 do host, pois será acessado via nginx
+    expose:
+      - "3000"
+    # Aguarda o backend iniciar antes de iniciar o frontend
+    depends_on:
+      - backend
+    networks:
+      - dashboard-network
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - dashboard-network
+
+  # - Nginx é um servidor web de código aberto usado para servir conteúdo estático e atuar como proxy reverso
+  # - É altamente escalável e pode lidar com um grande número de conexões simultâneas
+  # - No contexto deste projeto, o Nginx será usado para servir a aplicação web e encaminhar requisições para o backend
+  nginx:
+    # - A imagem nginx:alpine é uma versão leve do Nginx baseada na Alpine Linux
+    # - É uma escolha popular para ambientes Docker devido ao seu tamanho reduzido e simplicidade
+    image: nginx:alpine
+    # Monta o nginx.conf customizado no container
+    # Sem este volume, o Nginx usa a config DEFAULT e ignora todas as suas regras de proxy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    # Mapeia a porta 80 do container para a porta 80 do host
+    ports:
+      - "80:80"
+    # Nginx aguarda backend e frontend iniciarem antes
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - dashboard-network
+
+# - Redes permitem que os containers se comuniquem entre si
+networks:
+  dashboard-network:
+    # - Driver "bridge" é o tipo padrão de rede Docker
+    # - Cria uma rede privada virtual que permite que os containers se comuniquem entre si
+    # - Cada container na rede tem seu próprio IP e pode se comunicar com outros containers na mesma rede
+    driver: bridge

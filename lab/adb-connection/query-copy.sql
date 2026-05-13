@@ -13,25 +13,33 @@ SELECT
         ELSE 'PRIVADO'
     END AS Contexto,
     
-    -- O nome da conversa (grupo/contato) pode aparecer em diferentes tabelas,
-    -- dado uma possível transição de arquitetura do Whatsapp:
-    COALESCE(                        -- Se nenhuma condição abaixo passar, retorna NULL:
-        wa_c.display_name,           -- Nome direto (se for grupo, ou contato salvo PN)
-        wa_c_map.display_name,       -- Nome via LID -> PN (aparecen em chats privados)
-        wa_c.wa_name,                -- Nome de push direto (se houver)
-        wa_c_map.wa_name,            -- Nome de push via ponte (se houver)
-        j_chat.raw_string            -- Fallback para o JID (se o contato não estiver salvo ou for interação do WhatsApp)
+    -- NOME_CONVERSA: resolve apenas o nome legível (quem é a pessoa)
+    -- Nunca mostra número bruto nem LID — se não tiver nome, usa "Desconhecido"
+    COALESCE(
+        wa_c.display_name,           -- 1. Nome salvo na agenda
+        wa_c_map.display_name,       -- 2. Nome salvo via mapeamento LID
+        v_chat.verified_name,        -- 3. Nome de empresa verificada (Business)
+        wa_c.wa_name,                -- 4. Push Name (nome de perfil da própria pessoa)
+        wa_c_map.wa_name,            -- 5. Push Name via mapeamento LID
+        'Desconhecido'               -- 6. Fallback: contato sem nome conhecido
     ) AS Nome_Conversa,
 
-    -- RESOLUÇÃO DO REMETENTE ("Você")
+    -- REMETENTE: resolve o número de telefone real (quem enviou)
+    -- Para contatos não-salvos, prioriza o número antes do nome ou do LID
     CASE 
-        WHEN m.from_me = 1 THEN 'Você' -- Geralmente essa condição passa, senão, entra no fallback:
-        ELSE COALESCE(              -- Busca nas mesmas tabelas do COALESCE anterior para aplicar mesmo rigor de busca: 
-            wa_s.display_name,
-            wa_s_map.display_name, 
-            wa_s.wa_name, 
-            j_sender.raw_string, 
-            j_chat.raw_string
+        WHEN m.from_me = 1 THEN 'Você'
+        ELSE COALESCE(
+            -- 1. Número via ponte LID -> PN (status_ranking) do REMETENTE
+            REPLACE(map_s.jid, '@s.whatsapp.net', ''),
+            -- 2. Número via ponte do CHAT (para privados, sender == chat)
+            REPLACE(map_c.jid, '@s.whatsapp.net', ''),
+            -- 3. Se o JID do sender já for um número (@s.whatsapp.net), extrai direto
+            CASE WHEN j_sender.raw_string LIKE '%@s.whatsapp.net'
+                 THEN REPLACE(j_sender.raw_string, '@s.whatsapp.net', '')
+                 ELSE NULL END,
+            -- 4. Fallback: limpa o @lid e exibe o ID numérico (último recurso)
+            REPLACE(REPLACE(j_sender.raw_string, '@lid', ''), '@s.whatsapp.net', ''),
+            REPLACE(REPLACE(j_chat.raw_string, '@lid', ''), '@s.whatsapp.net', '')
         )
     END AS Remetente,
 
@@ -49,10 +57,12 @@ LEFT JOIN
     LEFT JOIN (SELECT DISTINCT jid, lid_jid FROM wa_db.status_ranking) map_c ON j_chat.raw_string = map_c.lid_jid --- SELECT DISTINCT serve para ignorar duplicatas
     LEFT JOIN wa_db.wa_contacts wa_c ON j_chat.raw_string = wa_c.jid
     LEFT JOIN wa_db.wa_contacts wa_c_map ON map_c.jid = wa_c_map.jid
+    LEFT JOIN wa_db.wa_vnames v_chat ON j_chat.raw_string = v_chat.jid
 -- Ponte para o SENDER (Remetente)
 LEFT JOIN (SELECT DISTINCT jid, lid_jid FROM wa_db.status_ranking) map_s ON j_sender.raw_string = map_s.lid_jid
 LEFT JOIN wa_db.wa_contacts wa_s ON j_sender.raw_string = wa_s.jid
 LEFT JOIN wa_db.wa_contacts wa_s_map ON map_s.jid = wa_s_map.jid
+LEFT JOIN wa_db.wa_vnames v_sender ON j_sender.raw_string = v_sender.jid
 WHERE 
     m.text_data IS NOT NULL 
     AND m._id > ?  -- O '?' é onde o Go vai injetar o lastProcessID

@@ -1,67 +1,103 @@
 # 📱 Intelitrader Desafio Técnico: WhatsApp Data Sync
 
-[![Status: Em Desenvolvimento](https://img.shields.io/badge/Status-Em_Desenvolvimento-yellow.svg)](Docs/processo.md)
+[![Status: Concluído](https://img.shields.io/badge/Status-Conclu%C3%ADdo-brightgreen.svg)](Docs/processo.md)
 [![Candidato: Gustavo Melo](https://img.shields.io/badge/Candidato-Gustavo_Melo-blue.svg)](Docs/Sobre-Gustavo.md)
+[![Stack: Go | .NET | Next.js | Redis | Docker](https://img.shields.io/badge/Stack-Go_|_.NET_|_Next.js_|_Redis_|_Docker-blueviolet.svg)](TECH_GUIDE.md)
 
-Este repositório contém a solução para o **Desafio Técnico de Integração e Monitoramento Android Real-Time**, proposto pela **Intelitrader**.
+Este repositório contém a solução completa para o **Desafio Técnico de Integração e Monitoramento Android Real-Time**, proposto pela **Intelitrader**.
 
-O objetivo principal é construir um ecossistema que integre a extração de mensagens em tempo real do banco de dados do WhatsApp em um dispositivo Android e a inserção remota de contatos, utilizando um Agente Nativo (Golang) e uma Interface Externa (C# .NET) com comunicação intermediada pelo Redis.
+O projeto evoluiu de uma prova de conceito para uma plataforma robusta de sincronização, integrando extração de dados de baixo nível no Android, processamento assíncrono via Redis e visualização em tempo real em um Dashboard moderno.
 
 ---
 
-## 🎯 Objetivos do Desafio
+## 🎯 Status do Desafio
 
 ### Agente Nativo (Android/Golang)
 
-- [ ] Monitorar o banco SQLite (`msgstore.db`) de mensagens do WhatsApp e, a cada nova inserção, enviar o conteúdo para uma instância do Redis.
-- [ ] Escutar uma fila/tópico no Redis.
-- [ ] Ao receber um novo comando, inserir um contato na agenda telefônica do Android (via content insert ou chamadas de API do sistema).
+- [x] **Leitura Real-time**: Monitoramento do SQLite (`msgstore.db`) via Observers + Polling Fallback.
+- [x] **SQL Avançado**: Resolução de identidades (LID to PN) e extração de nomes salvos.
+- [x] **Integração Redis**: Push de mensagens via Hashes e Notificação via Pub/Sub.
+- [x] **Persistência Android**: Resiliência contra OOM Killer e Doze Mode.
 
-### Interface Externa (C# .NET)
+### Interface Externa (C# .NET & Next.js)
 
-- [ ] Ler as mensagens publicadas no Redis e exibi-las no console (ou em um log/dashboard simples) em **tempo real**.
-- [ ] Expor um endpoint `POST /contacts`, que deve publicar os dados do novo contato no Redis para que o Agente Nativo processe a inserção no dispositivo Android.
-
----
-
-## 🛠️ Tecnologias e Arquitetura
-
-- **Daemon/Agente Nativo:** Golang.
-- **Interface Externa:** C# (.NET).
-- **Mensageria e Cache:** Redis (rodando em máquina local via Docker).
-- **Ambiente de Teste:** Emulador Android Studio (Pixel 6 Pro) com acesso Root liberado.
-
-### Arquitetura da Solução
-
-1. O aplicativo **WhatsApp** (no Emulador Root) escreve suas mensagens no banco `msgstore.db`.
-2. O **Agente Nativo (Go)** roda em background no Android, lê as novas entradas e faz o push para o **Redis**.
-3. A **Interface Externa (C#)** consome o Redis para exibir as mensagens e envia comandos de volta ao Redis quando o endpoint `/contacts` é acionado.
-4. O **Agente Nativo (Go)** consome o comando do Redis e interage com os provedores de conteúdo do Android para salvar o contato.
+- [x] **Backend .NET**: API Minimal com suporte a SSE (Server-Sent Events) para streaming de mensagens.
+- [x] **Frontend Next.js**: Dashboard responsivo com telemetria em tempo real e animações de tráfego.
+- [x] **API de Contatos**: Endpoint `POST /contacts` para inserção remota via Redis.
 
 ---
 
-## 🚀 Progresso Atual: Etapa 001 - Configuração do Ambiente
+## 🔭 Arquitetura da Solução
 
-O projeto está sendo construído passo a passo. Até o momento, a base ambiental e de pesquisa foi estabelecida:
+O sistema opera em uma arquitetura orientada a eventos (Event-Driven) distribuída em containers:
 
-- [x] Configuração inicial do ambiente Go e Android Studio.
-- [x] Criação de um emulador Android com acesso **Root** (Pixel 6 Pro) para contornar as limitações de acesso aos dados de outros apps.
-- [x] Instalação do WhatsApp no emulador e mapeamento manual do banco de dados SQLite (`msgstore.db` -> tabela `message`).
-- [x] Download e configuração do NDK para compilação C/C++/Go para Android.
-- [x] Configuração do contêiner Docker para o Redis.
-- [x] Desenvolvimento de um código base em `main.go` para compilação cruzada (cross-compile) e envio ao emulador via `adb push`, realizando os primeiros testes de conexão entre o ambiente nativo e o Redis.
+```mermaid
+graph LR
+    subgraph "Ambiente Android (Root)"
+        A[WhatsApp DB] --> B[Agente Go]
+    end
+
+    B -- "PUSH (Hashes)" --> C[(Redis)]
+    B -- "PUB (Events)" --> C
+
+    subgraph "Ecossistema Docker"
+        C -- "SUB" --> D[Backend .NET]
+        D -- "SSE Stream" --> E[Dashboard Next.js]
+        E -- "POST /contacts" --> D
+        D -- "PUSH Command" --> C
+    end
+
+    C -- "SUB Command" --> B
+    B -- "Content Insert" --> F[Agenda Android]
+```
 
 ---
 
-## 📚 Documentação Auxiliar
+## 🛠️ Tecnologias Utilizadas
 
-Ao longo do desenvolvimento, documentações detalhadas sobre o processo, decisões técnicas e aprendizados estão sendo registradas (este readme foi revisado textualmente com ajuda de IA, mas a documentação NÃO):
-
-- 👤 **[Sobre o Candidato (Gustavo Melo)](Docs/Sobre-Gustavo.md)**: Um pouco sobre a minha trajetória, o pragmatismo no aprendizado de Go e C# para esse desafio, e como abordo arquitetura e engenharia.
-- 📝 **[Decisões Técnicas e Processo](Docs/processo.md)**: Registro do fluxo de trabalho e das decisões arquiteturais tomadas.
-- 🚧 **[Dificuldades Encontradas](Docs/dificuldades.md)**: Um log honesto sobre os desafios técnicos enfrentados (como a curva de aprendizado de novas linguagens) e as soluções adotadas.
-- 📱 **[Limitações do Android](Docs/limitacoes.md)**: _Em breve_. Explicações problemas enfrentados com a arquitetura do Android.
+- **Agente Nativo:** Golang (Cross-compiled para Android x86_64/ARM64).
+- **Backend:** C# (.NET 10 Minimal API).
+- **Frontend:** Next.js 15 (App Router, TailwindCSS, Lucide React).
+- **Infraestrutura:** Docker & Docker Compose.
+- **Banco de Dados/Broker:** Redis.
 
 ---
 
-_Construído com dedicação para a equipe técnica da Intelitrader._
+## 🚀 Como Executar
+
+### 1. Requisitos
+
+- Docker & Docker Compose instalados.
+- Emulador Android com acesso Root (configurado no IP `10.0.2.2`).
+
+### 2. Subir a Infraestrutura
+
+```bash
+docker-compose up -d
+```
+
+Isso iniciará o **Redis**, o **Backend .NET** e o **Frontend Next.js**.
+
+- Dashboard: `http://localhost:3000`
+- API Backend: `http://localhost:5000`
+- Redis exposto em: `localhost:6379`
+
+### 3. Executar o Agente no Android
+
+Navegue até `lab/adb-connection/` e utilize o script de deploy automatizado:
+
+```bash
+bash deploy.sh
+```
+
+---
+
+## 📚 Documentação Detalhada
+
+O projeto foi rigorosamente documentado para facilitar a revisão técnica e o entendimento das decisões de design:
+
+- 👤 **[Sobre o Candidato](Docs/Sobre-Gustavo.md)**: Perfil generalista, mentalidade autodidata e uso de IA com diferencial.
+- 📝 **[Registro de Processo](Docs/processo.md)**: O diário de bordo completo, da Etapa 001 à Etapa 005.
+- 🏗️ **[Guia Técnico (TECH_GUIDE.md)](TECH_GUIDE.md)**: Explicação profunda da arquitetura, stack e fluxos de dados.
+- 🧪 **[Reflexão Técnica e Padrões](Docs/processo.md#etapa-005-reflexão-e-triangulação-técnica)**: Mapeamento de padrões (Strangler Fig, Debounce, PoC-Driven) aplicados intuitivamente.
+- 🚧 **[Dificuldades Encontradas](Docs/dificuldades.md)**: Como limitações do Android e concorrência em Go foram superadas.
