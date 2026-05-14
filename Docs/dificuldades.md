@@ -91,4 +91,23 @@ O problema: quebras de protocolo por parte do agente:
 
 Solução: Depuração e testes com correções dos problemas identificados.
 
+## Dificuldade 10: Etágio 2 de 2: Teste de Estresse e debugging com IA
+
+E finalmente consegui desenvolver todos os componentes necessários para gerar o produto final do desafio, só que mais um teste precisava ser feito, e pra isso criei a pasta `integrated-solution` para essa finalidade:
+
+- Investigar vulnerabilidades no código (SQL Injection)
+- Avaliar boas práticas de programação (SOLID, Clean Code, etc.)
+- Testar performance e estabilidade do Agente Go no Android (resiliente a OOM)
+- Validar a estabilidade geral da aplicação (Conteineres dependentes de Redis e Nginx)
+
+A dificuldade esteve em ter que escrever testes, e dessa vez falo de talvez testes unitários, integração... seja lá o que for. Como eu não tenho experiência escrevendo códigos de testes, minha idéia foi gerar um script com simulação de uso "malicioso" (tentativa de SQL Injection, e checagem de outras vulnerabilidades) e validar se a infraestrutura estava pronta de fato.
+
+- O problema: validar brechas no código
+
+- Solução: Gerar script de simulação e checagem.
+
 ---
+
+## Considerações finais
+
+O desafio está concluído, nessa "jornada de aprendizado", senti que minha dificuldade mais significativa foi a de domar funções assíncronas (Goroutines, Actions, e Tasks), que, até o momento não entraram muito bem na minha cabeça. Acredito que ao longo do tempo, e com a prática, essa dificuldade vai diminuindo. Sinto que hoje tenho uma visão muito mais clara de como funcionam as coisas. Fico feliz com o resultado final, e espero que ele possa ser aceito pelo pessoal da Intelitrader. :D

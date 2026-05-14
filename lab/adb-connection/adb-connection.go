@@ -27,6 +27,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +68,12 @@ type MessageDTO struct {
     Remetente    string `json:"remetente"`
     Conteudo     string `json:"conteudo"`
     Horario      string `json:"horario"`
+}
+
+// @engineer: DTO para recebimento de comandos do Redis (Injeção de Contatos)
+type ContactDto struct {
+	Name   string `json:"name"`
+	Number string `json:"number"`
 }
 
 //go:embed query-copy.sql
@@ -190,7 +198,23 @@ func main() {
 		}
 	}()
 
+	// 8. Inicia o Motor de Escrita (Subscriber de Contatos) em paralelo
+	go startContactSubscriber(rdb)
+
 	<-make(chan struct{})
+}
+
+// @engineer: Nova Goroutine que escuta ordens de injeção de contatos (Redis -> Android)
+func startContactSubscriber(rdb *redis.Client) {
+	channelSubscribe := "contacts:insert"
+	pSub := rdb.Subscribe(ctx, channelSubscribe)
+	log.Printf("[CONTACT SUBSCRIBER] Escutando canal: %s", channelSubscribe)
+	defer pSub.Close()
+
+	for msg := range pSub.Channel() {
+		log.Println("[CONTACT SUBSCRIBER] Nova ordem recebida via Redis!")
+		contactShoot(msg.Payload)
+	}
 }
 
 
@@ -295,4 +319,75 @@ func createStringHash(dto MessageDTO) map[string]interface{} {
 	}
 	return redisHash
 
+}
+
+// @engineer: Funções de suporte para o Motor de Escrita (Contatos)
+func getActiveAccount() (name string, accType string) {
+	cmd := exec.Command("dumpsys", "account")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", ""
+	}
+
+	re := regexp.MustCompile(`name=([^, ]+), type=(com\.google)`)
+	matches := re.FindStringSubmatch(string(output))
+
+	if len(matches) >= 3 {
+		return matches[1], matches[2]
+	}
+	return "", ""
+}
+
+func contactShoot(contactJSON string) {
+	fmt.Println("[CONTACT BUILDER] Processando nova ordem de injeção...")
+
+	var contactDto ContactDto
+	err := json.Unmarshal([]byte(contactJSON), &contactDto)
+	if err != nil || contactDto.Name == "" || contactDto.Number == "" {
+		log.Println("[CONTACT BUILDER] Erro: Dados do contato inválidos no JSON")
+		return
+	}
+
+	accName, accType := getActiveAccount()
+	bindAccName := "account_name:n:"
+	bindAccType := "account_type:n:"
+
+	if accName != "" {
+		fmt.Printf("[CONTACT BUILDER] Modo Conta Google: %s\n", accName)
+		bindAccName = "account_name:s:" + accName
+		bindAccType = "account_type:s:" + accType
+	} else {
+		fmt.Println("[CONTACT BUILDER] Modo Local (Sem conta Google)")
+	}
+
+	// 1. Criar Raw Contact
+	cmdInsertRaw := exec.Command("content", "insert", "--uri", "content://com.android.contacts/raw_contacts", "--bind", bindAccName, "--bind", bindAccType)
+	if err := cmdInsertRaw.Run(); err != nil {
+		log.Printf("[CONTACT BUILDER] Erro ao criar raw_contact: %v", err)
+		return
+	}
+
+	// 2. Recuperar ID
+	cmdGetID := exec.Command("content", "query", "--uri", "content://com.android.contacts/raw_contacts", "--projection", "_id", "--sort", "_id DESC")
+	output, err := cmdGetID.Output()
+	if err != nil {
+		log.Printf("[CONTACT BUILDER] Erro ao consultar ID: %v", err)
+		return
+	}
+
+	re := regexp.MustCompile(`_id=(\d+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) < 2 {
+		log.Println("[CONTACT BUILDER] Erro: ID não localizado")
+		return
+	}
+	rawID := matches[1]
+
+	// 3. Vincular Nome
+	exec.Command("content", "insert", "--uri", "content://com.android.contacts/data", "--bind", "raw_contact_id:i:"+rawID, "--bind", "mimetype:s:vnd.android.cursor.item/name", "--bind", "data1:s:"+contactDto.Name).Run()
+
+	// 4. Vincular Telefone
+	exec.Command("content", "insert", "--uri", "content://com.android.contacts/data", "--bind", "raw_contact_id:i:"+rawID, "--bind", "mimetype:s:vnd.android.cursor.item/phone_v2", "--bind", "data1:s:"+contactDto.Number, "--bind", "data2:i:2").Run()
+
+	log.Printf("[CONTACT BUILDER] Contato '%s' construído com sucesso!", contactDto.Name)
 }

@@ -158,6 +158,8 @@ Os testes anteriores foram feitos na máquina local, simulando estrutura semelha
 
 O código foi devidamente adaptado, agora o agente consegue se comportar exatamente como um serviço nativo do sistema, similar ao anteriormente testado no ambiente Windows. Durante os testes entre um dia e outro, percebi que o Go, ao fazer build do binário para Android, me forçava a linkar o NDK, mas em nenhum momento do meu código até então eu fiz uso, de fato, de nenhuma biblioteca do NDK. Embora eu tenha conseguido buildar com ele uma vez, o Agente funciona perfeitamente sem linkar com o NDK, o que culminou na quinta etapa (após pesquisar sobre, e revisar o código com uma IA externamente (não usei agentes/gemini/cloud code), a arquitetura do meu binário é o mesmo de um daemon, e o objetivo da revisão foi apenas saber se sem o NDK o código poderia quebrar em algum momento que eu não estivesse vendo).
 
+> PS.: Aqui eu falhei em não pesquisar direito sobre o NDK, ele é crucial para usar o JNI (Java Native Interface) dentro do Android, o que possibilita rodar o binário como um serviço ou daemon Android de forma nativa, reduzindo conflitos com funções do sistema. Posteriormente eu corrigi isso na sexta etapa ao implementar a interface.
+
 - [x] Criou PoC (Proof of Case) para implementação do Agente/Daemon de monitoramento
   - [x] Identificou limitações do SO Android
   - [x] Pesquisou e testou soluções durante desenvolvimento do PoC
@@ -301,7 +303,7 @@ O painel visual foi refinado com agente para garantir uma experiência sem erros
 
 ### Resumo dos Marcos
 
-s- **Infraestrutura**: A conteinerização via Docker unificou as tecnologias (.NET, Go, Next.js, Redis), eliminando conflitos de ambiente e garantindo portabilidade total do desafio.
+- **Infraestrutura**: A conteinerização via Docker unificou as tecnologias (.NET, Go, Next.js, Redis), eliminando conflitos de ambiente e garantindo portabilidade total do desafio.
 
 - **Backend Robustez**: A implementação da API em .NET com Redis Pub/Sub e SSE transformou o fluxo de dados em um stream de baixa latência, com mecanismos de resiliência como Heartbeats e gestão de conexões.
 - **Engenharia de Dados**: A superação do desafio de identidades (LID vs JID) via SQL avançado, permitindo a extração de nomes e números mesmo em uma arquitetura de banco de dados fragmentada.
@@ -326,6 +328,84 @@ Através da análise técnica do agente de IA sobre o código gerado, foi possí
 
 **Sinceridade Técnica**: Durante a entrevista, utilizarei da minha sinceridade para explicar que esses nomes foram identificados nesta etapa de reflexão com a IA. Isso prova que a prática e a habilidade de pesquisa (7 anos de autodidatismo) me levaram a implementar soluções de engenharia robustas que a academia apenas formaliza.
 
+> Commit: b92b6f9 test(lab): implementa aplicação externa (api e dashboard) com devidas adaptações + documentação atualizada
+
 ---
 
-As etapas processo foram devidamente organizadas em um quadro Kanban usando Trello: https://trello.com/b/SuVJxaAJ/desafio-intelitrader
+## Etapa 006: Pipeline de Injeção de Contatos (Escrita)
+
+Nesta etapa, implementei o fluxo inverso: a capacidade de atuar no Android a partir de comandos externos enviados via Redis.
+
+- **Lógica da lista de contatos**: O Android usa "perfis" para criar contatos. Basicamente, ele configura uma "conta" padrão para armazenar os contatos, e dei o azar de ter setado uma conta Google como padrão, isso me custou algumas horas de pesquisa para entender como funcionava a sincronização, até consegui salvar no armazenamento do telefone desativando a conta, mas pra simular um telefone corporativo com uma conta logada, o melhor era logar com uma conta Google e apelar pra agente de IA na leitura do debug.
+- **Conflito de Sync (Google vs Local):** Identifiquei que contatos criados sem vínculo de conta (`NULL`) sofrem delay ou invisibilidade quando a sincronização do Google está ativa no Android. A solução foi implementar o **Account Discovery**, que detecta a conta Google ativa via `dumpsys account` e vincula o novo contato a ela, garantindo visibilidade instantânea.
+- **Atomicidade via Shell:** Como o Android não expõe uma API de transação via Shell, estruturei a injeção em três passos rigorosamente ordenados:
+  1.  Criação do `raw_contact`. <- Uma casca que virá a ser o contato no final do processo, serve para adquirir o ID do contato sob a lógica do banco de dados do sistema.
+  2.  Recuperação do ID gerado via `content query` com ordenação descendente e Regex.
+  3.  Vinculação de metadados (Nome e Telefone) na tabela `data`. <- É aqui que o nome e o telefone serão inseridos de fato.
+- **Interoperabilidade de Tipagem:** Lidamos com mais uma diferença de serialização entre C# (PascalCase) e Go (camelCase). Aproveitei a insensibilidade a maiúsculas/minúsculas do `json.Unmarshal` para garantir que o Agente aceite mensagens do Dashboard sem erros de contrato.
+
+**Conceitos de Engenharia Aplicados (IA Review):**
+
+- **Reverse Shell Command Injection (Defesa):** Implementação de sanitização básica para evitar que nomes com caracteres especiais quebrem o comando `content` do Android.
+- **Discovery Pattern:** Antes de agir, o agente "pergunta" ao sistema operacional (`dumpsys`) sobre o ambiente para descobrir como agir. <- Dumpsys é um comando do Android que fornece informações detalhadas sobre o estado do sistema, usado aqui para garanti que o agente não insira o contato em uma conta deslogada ou inexistente.
+- **Asynchronous Processing (Goroutines):** O agente foi preparado para operar de forma Full-Duplex, lendo mensagens e inserindo contatos simultaneamente sem bloqueio de IO, graças a capacidade nativa da linguagem Go de executar operações em paralelo.
+
+---
+
+## Etapa 007: Consolidação, Code Quality e Chaos Engineering
+
+Nesta fase final, todos os componentes testados isoladamente no diretório `/lab` foram unificados em uma solução coesa e pronta para produção no diretório `/lab/integrated-solution/`. Mais importante do que fazer funcionar, o objetivo foi garantir a **resiliência** da arquitetura contra falhas do mundo real.
+
+- **Filtro Técnico (Boas Práticas e Performance):**
+  - **N+1 Query Problem:** Identificamos que a abordagem inicial do Agente Go (`database.QueryRow` dentro de um loop infinito) poderia disparar severos picos de uso de CPU no Android caso houvesse um grande lote de mensagens enfileiradas. Refatoramos para utilizar `database.Query()` com remoção do `LIMIT` e uso de cursor `rows.Next()`, resolvendo o problema de performance pela raiz e permitindo processamento em lote de forma extremamente leve.
+  - **Fail-Fast & Observabilidade:** Adicionamos tratamento de erros estrito (`err != nil`) nas chamadas Shell do Android. Em caso de falha na injeção do contato (ex: Android negou um formato de número), o erro não é mais engolido silenciosamente, sendo registrado nos logs para auditoria clara e precisa.
+  - **Dynamic Configuration (The 12-Factor App):** Removemos IPs chumbados no código (hardcoded `10.0.2.2`). Agora, tanto o agente Go quanto a API .NET extraem as credenciais via Variáveis de Ambiente, permitindo deploy em infraestrutura real na nuvem sem necessidade de recompilar os binários.
+  - **Conexão Resiliente no .NET:** Implementação de fallback configuration e de injeção de dependências robusta (`AddSingleton<RedisService>`). Para o Frontend Next.js (SSE), adicionamos um _Heartbeat_ (Ping periódico) que evita o timeout de conexão (Erro 499) na infraestrutura do Nginx, mantendo o tráfego Server-Sent Events fluindo de forma contínua.
+  - **WhatsApp Environment Auto-Discovery:** Fechando o ciclo da limitação reportada na Etapa 001 (quando o emulador rejeitou a instalação do aplicativo comercial), o Agente Go foi refatorado para inspecionar e descobrir dinamicamente qual pacote está rodando no host. Ele tenta resolver primeiro o diretório do **WhatsApp Business** (`com.whatsapp.w4b`) via `os.Stat()` e, caso não exista, aplica um fallback seguro para o **WhatsApp Normal** (`com.whatsapp`). Isso garante a compatibilidade universal com o curinga exigido pelo desafio (`com.whatsapp*`), eliminando definitivamente o hardcoding de rotas.
+
+- **Filtro de Caos (Stress Test):**
+  - Desenvolvemos um script Python de bombardeio (`chaos_test.py`) orquestrado via Docker Compose (Profiles) para simular cenários extremos de "mau uso" e validar a blindagem do Agente:
+    1. **A Bomba de Carga:** 50 ordens de inserção de contatos enviadas em menos de 2 segundos. O agente enfileirou e consumiu todos os itens no ritmo da IO do Android (aprox. 500ms a 1s por contato), sem exceder memória (OOM) e sem crashs.
+    2. **O Contato Fantasma:** Teste de invalidação de dados JSON (campos faltando ou strings vazias). A validação Go rejeitou os artefatos sujos antes que chegassem ao SQLite do Android.
+    3. **Injeção Shell/SQL (Segurança):** Tentativas de evasão como `$(reboot)` e `Pwned"; rm -rf /`. Provamos que o uso correto do pacote `os/exec` em Go protege o terminal Android, pois trata os argumentos como strings literais, neutralizando completamente o RCE (Remote Code Execution).
+    4. **Buffer Overflow:** Nomes com extensões absurdas (5000+ caracteres), suportados e contidos com segurança pelas restrições nativas.
+
+**Conceitos de Engenharia Aplicados (IA Review):**
+
+- **Chaos Engineering:** A prática de testar a resiliência de um sistema distribuído injetando falhas (neste caso, carga e poluição de fila) de forma intencional para provar que a estabilidade não é apenas teórica.
+- **The Twelve-Factor App (Config):** Armazenamento seguro de configurações de infraestrutura extraídas do código-fonte (Variáveis de Ambiente).
+- **Fail-Fast Principle:** Garantir que o sistema aborte e relate erros de infra ou execução o mais cedo possível, em vez de prosseguir com estados inválidos e corromper o banco.
+- **N+1 Query Problem Mitigation:** Otimização clássica no acesso a banco de dados relacional para reduzir drasticamente o custo do I/O, substituindo varreduras iterativas de tuplas únicas por cursores dinâmicos (`rows.Next()`).
+- **Battery Optimization (Event-Driven vs Polling):** Em vez de executar queries em looping contínuo (o que impediria o Deep Sleep do processador ARM e drenaria a bateria do celular), a arquitetura depende primariamente do `fsnotify` (inotify), ativando a CPU apenas quando o kernel reporta mudanças físicas nos arquivos do banco.
+- **Injection Mitigation (Security by Design):**
+  - **SQL Injection:** O motor de leitura usa _Prepared Statements_ nativos (`database.Query("... > ?", id)`), bloqueando automaticamente injeções na camada do SQLite.
+  - **Shell Injection (RCE):** O motor de injeção de contatos (uso do `os/exec`) encaminha os parâmetros como literais diretamente via syscalls do kernel, e não abrindo um terminal shell (`sh -c`). Isso provou no Chaos Test que strings maliciosas como `$(reboot)` ou `rm -rf /` são tratadas inofensivamente como nomes de contato, anulando o vetor de ataque.
+- **System Design Trade-offs (Message Broker):** A arquitetura atual utiliza _Redis Pub/Sub_ para garantir uma entrega ágil e de baixo overhead, provando o conceito da comunicação Inter-Process. A restrição documentada deste design é a característica "Fire-and-Forget": se o Redis ou o C# caírem, mensagens transacionadas durante o downtime seriam perdidas (Data Loss).
+- **Evolução Arquitetural (Next Steps):** A evolução projetada para um cenário de produção crítica (Zero Data Loss) envolveria a migração do Pub/Sub para **Redis Streams** (ou Apache Kafka). Isso garantiria a persistência das mensagens na fila e exigiria um "Acknowledge" (ACK) de consumo pelas pontas, blindando a arquitetura contra quedas catastróficas de infraestrutura sem perder a velocidade já alcançada.
+
+---
+
+### Etapa 008: Ultimo refinamento de UX, Validação e Identidade
+
+Durante um "ensaio técnico", identifiquei que poderia "lapidar a aplicação antes de commitar". O foco foi transformar a experiência de usuário (UX) em algo mais fluido e profissional, além de corrigir falhas de validação de negócio da adição de contatos (identifiquei que era possível adicionar contatos com texto no lugar do número de telefone).
+
+- [x] **Validação Estrita de Dados (Backend):**
+  - Implementação de validação via Regex no endpoint de criação de contatos para aceitar apenas dígitos.
+  - Padronização de Status Codes: Retorno **403 Forbidden** para entradas inválidas e **202 Accepted** para processamento bem-sucedido.
+- [x] **Evolução da Interface para Chat-First (Frontend):**
+  - Substituição do dashboard de métricas por uma interface de chat moderna.
+  - Implementação de **Sidebar de Conversas** para navegação entre chats capturados.
+  - Criação de **Bolhas de Mensagem** com diferenciação visual entre remetente ("Você" vs "Contato").
+  - Adição de suporte a **Auto-scroll** para acompanhar mensagens em tempo real.
+- [x] **Categorização e Metadados Visuais:**
+  - Implementação de **Badges de Contexto** (GRUPO/PRIVADO) no cabeçalho e na lista lateral, permitindo identificação instantânea do tipo de chat.
+- [x] **Identidade Visual e Social Proof:**
+  - Criação de um **Modal de Informações** animado, disparado pelo título da aplicação.
+  - Integração com a **API do GitHub** para carregar dinamicamente o avatar e cargo do desenvolvedor, vinculando a solução à identidade real do autor.
+- [x] **Polimento de Engenharia de Frontend:**
+  - Refatoração do estado React para suportar múltiplas janelas de chat sem perda de performance.
+  - Limpeza de dependências e ícones não utilizados.
+
+---
+
+As etapas do processo foram devidamente organizadas em um quadro Kanban usando Trello: https://trello.com/b/SuVJxaAJ/desafio-intelitrader
